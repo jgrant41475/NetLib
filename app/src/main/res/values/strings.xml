@@ -15,4 +15,6 @@
     <string name="netlib_1_0">NetLib 1.0</string>
     <string name="netlib">NetLib</string>
     <string name="categories">Categories</string>
+    <string name="refresh_library">Refresh Library</string>
+    <string name="android_launcher_icon">Android launcher icon</string>
 </resources>

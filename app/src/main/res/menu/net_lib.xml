@@ -9,7 +9,7 @@
         app:showAsAction="ifRoom" />
     <item
         android:id="@+id/action_refresh"
-        android:title="Refresh Library"
+        android:title="@string/refresh_library"
         android:icon="@drawable/ic_refresh"
         app:showAsAction="ifRoom" />
 </menu>

@@ -12,10 +12,10 @@ import android.support.v7.widget.RecyclerView
 import android.view.*
 import android.widget.*
 import kotlinx.android.synthetic.main.activity_netlib.*
-import kotlinx.android.synthetic.main.app_bar_net_lib.*
-import kotlinx.android.synthetic.main.content_net_lib.*
-import kotlinx.android.synthetic.main.netlib_movie_layout.view.*
-import kotlinx.android.synthetic.main.netlib_show_layout.view.*
+import kotlinx.android.synthetic.main.activity_netlib_appbar.*
+import kotlinx.android.synthetic.main.activity_netlib_content.*
+import kotlinx.android.synthetic.main.container_movie.view.*
+import kotlinx.android.synthetic.main.container_show.view.*
 import kotlinx.coroutines.experimental.Deferred
 import kotlinx.coroutines.experimental.android.UI
 import kotlinx.coroutines.experimental.async
@@ -232,7 +232,7 @@ class NetLibActivity : AppCompatActivity() {
         override fun getItemCount() = categories.size
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
-                Holder(LayoutInflater.from(parent.context).inflate(R.layout.nav_category_layout, parent, false))
+                Holder(LayoutInflater.from(parent.context).inflate(R.layout.container_nav_category, parent, false))
 
         class Holder(view: View) : RecyclerView.ViewHolder(view) {
             val name: TextView = view.find(R.id.nav_cat_name)
@@ -271,10 +271,10 @@ class NetLibActivity : AppCompatActivity() {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
             when(CATEGORY.from(viewType)) {
                 CATEGORY.MOVIE -> { return MovieHolder(LayoutInflater.from(parent.context)
-                        .inflate(R.layout.netlib_movie_layout, parent, false)) }
+                        .inflate(R.layout.container_movie, parent, false)) }
 
                 CATEGORY.TV -> { return ShowHolder(LayoutInflater.from(parent.context)
-                        .inflate(R.layout.netlib_show_layout, parent, false)) }
+                        .inflate(R.layout.container_show, parent, false)) }
 
                 else -> { return ViewHolder(LayoutInflater.from(parent.context)
                             .inflate(android.R.layout.simple_list_item_1, parent, false)) }

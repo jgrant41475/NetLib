@@ -8,7 +8,7 @@
     tools:openDrawer="start">
 
     <include
-        layout="@layout/app_bar_net_lib"
+        layout="@layout/activity_netlib_appbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content" />
 
@@ -25,7 +25,7 @@
             android:orientation="vertical">
             <include
                 android:id="@+id/nav_header"
-                layout="@layout/nav_header_net_lib" />
+                layout="@layout/activity_netlib_nav_header" />
 
         <android.support.v7.widget.RecyclerView
             android:id="@+id/nav_recycler"
