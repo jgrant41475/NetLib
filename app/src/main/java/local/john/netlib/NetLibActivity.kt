@@ -28,13 +28,13 @@ import java.net.Socket
 class NetLibActivity : AppCompatActivity() {
 
     internal companion object {
-        var sharedPref: SharedPreferences?                             = null
-        val library: MutableList<Pair<CATEGORY, List<NetLibCommon>>>   = mutableListOf()
+        var sharedPref: SharedPreferences?                                  =   null
+        val library: MutableList<Pair<CATEGORY, List<NetLibCommon>>>        =   mutableListOf()
 
-        var IP_ADDRESS                                                 = "192.168.0.5"
-        var PORT                                                       = "5051"
-        var ROOT                                                       = "C:\\Media\\"
-        var DEFAULT_CATEGORY                                           = CATEGORY.MOVIE
+        var IP_ADDRESS                                                      =   "192.168.0.5"
+        var PORT                                                            =   "5051"
+        var ROOT                                                            =   "C:\\Media"
+        var DEFAULT_CATEGORY                                                =   CATEGORY.MOVIE
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,14 +52,10 @@ class NetLibActivity : AppCompatActivity() {
         nav_recycler.setHasFixedSize(true)
         nav_recycler.layoutManager = LinearLayoutManager(this)
         nav_recycler.adapter = CategoryAdapter(mutableListOf())
-
         nav_recycler.addOnItemTouchListener(RecyclerItemClickListener(this, nav_recycler,
                 object: RecyclerItemClickListener.OnItemClickListener {
                     override fun onItemClick(view: View, position: Int) {
-                        val cat = (nav_recycler.adapter as CategoryAdapter).categories[position]
-
-                        updateContent(CATEGORY.from(cat.name))
-
+                        updateContent(CATEGORY.from((nav_recycler.adapter as CategoryAdapter).categories[position].name))
                         drawer_layout.closeDrawer(GravityCompat.START)
                     }
 
@@ -74,36 +70,31 @@ class NetLibActivity : AppCompatActivity() {
                     override fun onItemClick(view: View, position: Int) { }
 
                     override fun onLongItemClick(view: View, position: Int) {
-
                         @Suppress("unchecked_cast")
                         val adapter = content_recycler.adapter as ContentAdapter<NetLibCommon>
-
                         val item = adapter.content.content[position]
 
                         when(item.type) {
-                            CATEGORY.MOVIE -> { sendPlay((item as mMovie).file) }
-                            CATEGORY.TV -> { sendPlay((item as mShow).file) }
+                            CATEGORY.MOVIE, CATEGORY.TV -> { sendPlay(item.file) }
                             else -> {  }
                         }
                     }
-
                 }))
 
         // Load app settings and data
         reset()
     }
 
-    private fun refreshCategories() = (nav_recycler.adapter as CategoryAdapter)
-            .refreshCategories(library.map { (cat, _) -> mCategory(cat.name, cat.id) })
-
-
     private fun reset() {
-        sharedPref      = PreferenceManager.getDefaultSharedPreferences(applicationContext)
+        sharedPref              = PreferenceManager.getDefaultSharedPreferences(applicationContext)
 
-        IP_ADDRESS          = sharedPref?.getString("ip_address", IP_ADDRESS) ?: IP_ADDRESS
-        PORT                = sharedPref?.getString("port", PORT) ?: PORT
-        ROOT                = sharedPref?.getString("root", ROOT) ?: ROOT
-        DEFAULT_CATEGORY    = CATEGORY.from(sharedPref!!.getString("default_cat", DEFAULT_CATEGORY.toString()))
+        IP_ADDRESS              = sharedPref?.getString("ip_address", IP_ADDRESS) ?: IP_ADDRESS
+        PORT                    = sharedPref?.getString("port", PORT) ?: PORT
+        ROOT                    = sharedPref?.getString("root", ROOT) ?: ROOT
+        DEFAULT_CATEGORY        = CATEGORY.from(sharedPref!!.getString("default_cat", DEFAULT_CATEGORY.toString()))
+
+        if(ROOT.last() != '\\')
+            ROOT += "\\"
 
         updateLibrary()
     }
@@ -112,17 +103,15 @@ class NetLibActivity : AppCompatActivity() {
         async(UI) {
             val response: Deferred<List<Pair<CATEGORY, List<NetLibCommon>>>> = bg {
                 Socket(IP_ADDRESS, PORT.toInt()).use {
-                    PrintWriter(it.getOutputStream(), true).println("list")
+                    PrintWriter(it.getOutputStream(), true).println("root=\"${ROOT.replace(" ", "`")}\" list")
                     val reader = it.getInputStream().bufferedReader()
-                    var line = reader.readLine()
-
                     val temp = mutableListOf<Pair<CATEGORY, List<NetLibCommon>>>()
+                    var line = reader.readLine()
 
                     while (line != null) {
                         val (cat, list) = line.split("@")
 
                         temp.add(parseCategory(cat, list.split("|")))
-
                         line = reader.readLine()
                     }
 
@@ -130,15 +119,16 @@ class NetLibActivity : AppCompatActivity() {
                 }
             }
 
-            val temp = response.await()
+            refreshCategories(response.await())
 
-            library.clear()
-            library.addAll(temp)
-
-            refreshCategories()
+            // Library is empty, clear caches
+            if(library.size < 1) {
+                nav_recycler.adapter = CategoryAdapter(mutableListOf())
+                content_recycler.adapter = ContentAdapter(MovieContainer(mutableListOf()))
+            }
 
             // Check that the list is not empty and that the default category is contained
-            if(library.size > 0 && library.any{ (cat, _) -> cat == DEFAULT_CATEGORY })
+            else if(library.any{ (cat, _) -> cat == DEFAULT_CATEGORY })
                 updateContent(DEFAULT_CATEGORY)
         }
     }
@@ -149,11 +139,17 @@ class NetLibActivity : AppCompatActivity() {
         }
     }
 
-    @Suppress("unchecked_cast")
+    private fun refreshCategories(newCat: List<Pair<CATEGORY, List<NetLibCommon>>>) {
+        library.clear()
+        library.addAll(newCat)
+        (nav_recycler.adapter as CategoryAdapter).refreshCategories(library.map { (cat, _) -> mCategory(cat.name, cat) })
+    }
+
     private fun updateContent(category: CATEGORY) {
         val adapter = content_recycler.adapter
         supportActionBar?.title = category.getName()
 
+        @Suppress("unchecked_cast")
         when(category) {
             CATEGORY.MOVIE -> {
                 (adapter as ContentAdapter<mMovie>).content = MovieContainer(library.firstOrNull {
@@ -173,7 +169,7 @@ class NetLibActivity : AppCompatActivity() {
     private fun parseCategory(category: String, list: List<String>): Pair<CATEGORY, List<NetLibCommon>> {
         return when (category) {
             "Movies" -> {
-                CATEGORY.MOVIE to list.map { mMovie(it.replace(ROOT, "").split("\\")[1], it, CATEGORY.MOVIE) }
+                CATEGORY.MOVIE to list.map { mMovie(it.replace(ROOT, "").split("\\")[1], it) }
             }
             "TV" -> {
                 CATEGORY.TV to list.map {
@@ -185,34 +181,7 @@ class NetLibActivity : AppCompatActivity() {
         }
     }
 
-    override fun onBackPressed() =
-        if (drawer_layout.isDrawerOpen(GravityCompat.START)) { drawer_layout.closeDrawer(GravityCompat.START) }
-        else { super.onBackPressed() }
-
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        menuInflater.inflate(R.menu.net_lib, menu)
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        when (item.itemId) {
-            R.id.action_settings -> {
-                startActivity(Intent(this, SettingsActivity::class.java))
-                return true
-            }
-            R.id.action_refresh -> {
-                reset()
-                return true
-            }
-            else -> return super.onOptionsItemSelected(item)
-        }
-    }
-
-    internal class CategoryAdapter(val categories: MutableList<mCategory>)
+    private class CategoryAdapter(val categories: MutableList<mCategory>)
         : RecyclerView.Adapter<CategoryAdapter.Holder>() {
 
         internal fun refreshCategories(newList: List<mCategory>) {
@@ -223,10 +192,10 @@ class NetLibActivity : AppCompatActivity() {
         }
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
-            val cat = categories[position]
+            val cat = categories[position].type
 
-            holder.name.text = CATEGORY.from(cat.type).getName()
-            holder.type.text = cat.type.toString()
+            holder.name.text = cat.getName()
+            holder.type.text = cat.toString()
         }
 
         override fun getItemCount() = categories.size
@@ -240,7 +209,7 @@ class NetLibActivity : AppCompatActivity() {
         }
     }
 
-    internal class ContentAdapter<T: NetLibCommon>(var content: BaseContainer<T>)
+    private class ContentAdapter<T: NetLibCommon>(var content: BaseContainer<T>)
         : RecyclerView.Adapter<ContentAdapter.ViewHolder>() {
         override fun getItemViewType(position: Int) = content.content[position].type.id
         override fun getItemCount() = content.content.size
@@ -269,18 +238,17 @@ class NetLibActivity : AppCompatActivity() {
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-            when(CATEGORY.from(viewType)) {
-                CATEGORY.MOVIE -> { return MovieHolder(LayoutInflater.from(parent.context)
+            return when(CATEGORY.from(viewType)) {
+                CATEGORY.MOVIE -> { MovieHolder(LayoutInflater.from(parent.context)
                         .inflate(R.layout.container_movie, parent, false)) }
 
-                CATEGORY.TV -> { return ShowHolder(LayoutInflater.from(parent.context)
+                CATEGORY.TV -> { ShowHolder(LayoutInflater.from(parent.context)
                         .inflate(R.layout.container_show, parent, false)) }
 
-                else -> { return ViewHolder(LayoutInflater.from(parent.context)
-                            .inflate(android.R.layout.simple_list_item_1, parent, false)) }
+                else -> { ViewHolder(LayoutInflater.from(parent.context)
+                        .inflate(android.R.layout.simple_list_item_1, parent, false)) }
             }
         }
-
 
         open class ViewHolder(view: View) : RecyclerView.ViewHolder(view)
 
@@ -293,6 +261,33 @@ class NetLibActivity : AppCompatActivity() {
             val series: TextView = view.netlib_show_series
             val episode: TextView = view.netlib_show_episode
             val file: TextView = view.netlib_show_file
+        }
+    }
+
+    override fun onBackPressed() =
+            if (drawer_layout.isDrawerOpen(GravityCompat.START)) { drawer_layout.closeDrawer(GravityCompat.START) }
+            else { super.onBackPressed() }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        // Inflate the menu; this adds items to the action bar if it is present.
+        menuInflater.inflate(R.menu.net_lib, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        // Handle action bar item clicks here. The action bar will
+        // automatically handle clicks on the Home/Up button, so long
+        // as you specify a parent activity in AndroidManifest.xml.
+        return when (item.itemId) {
+            R.id.action_settings -> {
+                startActivity(Intent(this, SettingsActivity::class.java))
+                true
+            }
+            R.id.action_refresh -> {
+                reset()
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
         }
     }
 }
