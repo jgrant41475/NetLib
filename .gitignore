@@ -1,0 +1,28 @@
+*.iml
+.gradle
+/local.properties
+/.idea/workspace.xml
+/.idea/libraries
+build/
+.DS_Store
+/captures
+.externalNativeBuild
+
+# generated files
+bin/
+gen/
+# Windows thumbnail db
+Thumbs.db
+# Eclipse project files
+.classpath
+.project
+# Android Studio
+#.idea/workspace.xml - remove # and delete .idea if it better suit your needs.
+libs/
+src/main/res/PreferenceScreen/
+src/main/res/drawable-hdpi/
+src/main/res/drawable-mdpi/
+src/main/res/drawable-v21/
+src/main/res/drawable-xhdpi/
+src/main/res/drawable-xxhdpi/
+src/main/res/drawable-xxxhdpi/
