@@ -17,4 +17,7 @@
     <string name="categories">Categories</string>
     <string name="refresh_library">Refresh Library</string>
     <string name="android_launcher_icon">Android launcher icon</string>
+    <string name="title">Song: </string>
+    <string name="artist">Artist: </string>
+    <string name="album">Album: </string>
 </resources>

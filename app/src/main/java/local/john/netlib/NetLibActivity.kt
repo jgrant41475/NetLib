@@ -10,12 +10,13 @@ import android.support.v7.app.AppCompatActivity
 import android.support.v7.widget.LinearLayoutManager
 import android.support.v7.widget.RecyclerView
 import android.view.*
-import android.widget.*
+import android.widget.TextView
 import kotlinx.android.synthetic.main.activity_netlib.*
 import kotlinx.android.synthetic.main.activity_netlib_appbar.*
 import kotlinx.android.synthetic.main.activity_netlib_content.*
 import kotlinx.android.synthetic.main.container_movie.view.*
 import kotlinx.android.synthetic.main.container_show.view.*
+import kotlinx.android.synthetic.main.container_song.view.*
 import kotlinx.coroutines.experimental.Deferred
 import kotlinx.coroutines.experimental.android.UI
 import kotlinx.coroutines.experimental.async
@@ -75,19 +76,22 @@ class NetLibActivity : AppCompatActivity() {
                         val item = adapter.content.content[position]
 
                         when(item.type) {
-                            CATEGORY.MOVIE, CATEGORY.TV -> { sendPlay(item.file) }
+                            CATEGORY.MOVIE, CATEGORY.TV, CATEGORY.SONG -> { sendPlay(item.file) }
                             else -> {  }
                         }
                     }
                 }))
 
         // Load app settings and data
+        sharedPref              = PreferenceManager.getDefaultSharedPreferences(applicationContext)
+
+        if(sharedPref?.getString("ip_address", "NONE") == "NONE")
+            firstRun(sharedPref!!)
+
         reset()
     }
 
     private fun reset() {
-        sharedPref              = PreferenceManager.getDefaultSharedPreferences(applicationContext)
-
         IP_ADDRESS              = sharedPref?.getString("ip_address", IP_ADDRESS) ?: IP_ADDRESS
         PORT                    = sharedPref?.getString("port", PORT) ?: PORT
         ROOT                    = sharedPref?.getString("root", ROOT) ?: ROOT
@@ -159,6 +163,10 @@ class NetLibActivity : AppCompatActivity() {
                 (adapter as ContentAdapter<mShow>).content = ShowContainer(library.firstOrNull { (cat, _) ->
                     cat.name == CATEGORY.TV.toString() }?.second as MutableList<mShow>)
             }
+            CATEGORY.SONG -> {
+                (adapter as ContentAdapter<mSong>).content = SongContainer(library.firstOrNull { (cat, _) ->
+                    cat.name == CATEGORY.SONG.toString() }?.second as MutableList<mSong>)
+            }
 
             else -> {  }
         }
@@ -177,8 +185,23 @@ class NetLibActivity : AppCompatActivity() {
                     mShow(episode.substring(0, episode.lastIndexOf(".")), season, series, it)
                 }
             }
+            "Songs" -> {
+                CATEGORY.SONG to list.map {
+                    val (artist, album, song) = it.replace(ROOT + "Songs\\", "").split("\\")
+                    mSong(song.substring(0, song.lastIndexOf(".")), artist, album, it)
+                }
+            }
             else -> { CATEGORY.NONE to emptyList() }
         }
+    }
+
+    private fun firstRun(pref: SharedPreferences) {
+        pref.edit()
+                .putString("ip_address", IP_ADDRESS)
+                .putString("port", PORT)
+                .putString("root", ROOT)
+                .putString("default_cat", DEFAULT_CATEGORY.toString())
+                .apply()
     }
 
     private class CategoryAdapter(val categories: MutableList<mCategory>)
@@ -233,6 +256,16 @@ class NetLibActivity : AppCompatActivity() {
                     holder.file.text = show.file
                 }
 
+                CATEGORY.SONG -> {
+                    holder as SongHolder
+                    val show = (content as SongContainer).content[position]
+
+                    holder.artist.text = show.artist
+                    holder.album.text = show.album
+                    holder.song.text = show.song
+                    holder.file.text = show.file
+                }
+
                 else -> {  }
             }
         }
@@ -244,6 +277,9 @@ class NetLibActivity : AppCompatActivity() {
 
                 CATEGORY.TV -> { ShowHolder(LayoutInflater.from(parent.context)
                         .inflate(R.layout.container_show, parent, false)) }
+
+                CATEGORY.SONG -> { SongHolder(LayoutInflater.from(parent.context)
+                        .inflate(R.layout.container_song, parent, false)) }
 
                 else -> { ViewHolder(LayoutInflater.from(parent.context)
                         .inflate(android.R.layout.simple_list_item_1, parent, false)) }
@@ -261,6 +297,13 @@ class NetLibActivity : AppCompatActivity() {
             val series: TextView = view.netlib_show_series
             val episode: TextView = view.netlib_show_episode
             val file: TextView = view.netlib_show_file
+        }
+
+        class SongHolder(view: View) : ViewHolder(view) {
+            val song: TextView = view.netlib_song_song
+            val artist: TextView = view.netlib_song_artist
+            val album: TextView = view.netlib_song_album
+            val file: TextView = view.netlib_song_file
         }
     }
 
