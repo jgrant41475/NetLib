@@ -13,15 +13,17 @@ internal data class mShow(val episode: String, val season: String, val series: S
                           override val file: String, override val type: CATEGORY = CATEGORY.TV) : NetLibCommon()
 internal data class mSong(val song: String, val artist: String, val album: String,
                           override val file:String, override val type: CATEGORY = CATEGORY.SONG) : NetLibCommon()
+internal data class mParent(val title: String, val parentType: String, override val type: CATEGORY = CATEGORY.PARENT) : NetLibCommon()
 
 // Data containers to exchange categories between main recyclerview
 internal open class BaseContainer<T: NetLibCommon>(open val content: MutableList<T>)
 internal data class MovieContainer(override val content: MutableList<mMovie>) : BaseContainer<mMovie>(content)
 internal data class ShowContainer(override val content: MutableList<mShow>) : BaseContainer<mShow>(content)
 internal data class SongContainer(override val content: MutableList<mSong>) : BaseContainer<mSong>(content)
+internal data class ParentContainer(override val content: MutableList<mShow>) : BaseContainer<mShow>(content)
 
 // Category struct
-internal enum class CATEGORY(val id: Int) { NONE(0), MOVIE(1), TV(2), SONG(3);
+internal enum class CATEGORY(val id: Int) { NONE(0), MOVIE(1), TV(2), SONG(3), PARENT(999);
     fun getName() = when(id) {
         0 -> "None"
         1 -> "Movies"

@@ -15,6 +15,7 @@ import kotlinx.android.synthetic.main.activity_netlib.*
 import kotlinx.android.synthetic.main.activity_netlib_appbar.*
 import kotlinx.android.synthetic.main.activity_netlib_content.*
 import kotlinx.android.synthetic.main.container_movie.view.*
+import kotlinx.android.synthetic.main.container_nav_category.view.*
 import kotlinx.android.synthetic.main.container_show.view.*
 import kotlinx.android.synthetic.main.container_song.view.*
 import kotlinx.coroutines.experimental.Deferred
@@ -56,7 +57,8 @@ class NetLibActivity : AppCompatActivity() {
         nav_recycler.addOnItemTouchListener(RecyclerItemClickListener(this, nav_recycler,
                 object: RecyclerItemClickListener.OnItemClickListener {
                     override fun onItemClick(view: View, position: Int) {
-                        updateContent(CATEGORY.from((nav_recycler.adapter as CategoryAdapter).categories[position].name))
+                        val cat = (nav_recycler.adapter as CategoryAdapter).categories[position].type
+                        updateContent(cat, if(cat == CATEGORY.TV) 1 else 0)
                         drawer_layout.closeDrawer(GravityCompat.START)
                     }
 
@@ -68,7 +70,23 @@ class NetLibActivity : AppCompatActivity() {
         content_recycler.adapter = ContentAdapter(MovieContainer(mutableListOf()))
         content_recycler.addOnItemTouchListener(RecyclerItemClickListener(this, content_recycler,
                 object: RecyclerItemClickListener.OnItemClickListener {
-                    override fun onItemClick(view: View, position: Int) { }
+                    override fun onItemClick(view: View, position: Int) {
+                        @Suppress("unchecked_cast")
+                        val adapter = content_recycler.adapter as ContentAdapter<NetLibCommon>
+                        when (adapter.mode) {
+                            0 -> {
+                                updateContent(adapter.content.content[position].type, 0)
+                            }
+                            1 -> {
+                                updateContent(CATEGORY.TV, 2, (adapter.content.content[position] as mShow).series)
+                            }
+                            2 -> {
+                                val show = adapter.content.content[position] as mShow
+                                updateContent(CATEGORY.TV, 3, show.series, show.season)
+                            }
+
+                        }
+                    }
 
                     override fun onLongItemClick(view: View, position: Int) {
                         @Suppress("unchecked_cast")
@@ -88,10 +106,19 @@ class NetLibActivity : AppCompatActivity() {
         if(sharedPref?.getString("ip_address", "NONE") == "NONE")
             firstRun(sharedPref!!)
 
-        reset()
+        reset(savedInstanceState != null)
+
+        if(savedInstanceState != null && savedInstanceState.getString("netlib_cat", "") != "") {
+            val cat = CATEGORY.from(savedInstanceState.getString("netlib_cat"))
+            val mode = savedInstanceState.getInt("netlib_mode")
+            val seriesFilter = savedInstanceState.getString("netlib_seriesfilter")
+            val seasonFilter = savedInstanceState.getString("netlib_seasonfilter")
+
+            updateContent(cat, mode, seriesFilter, seasonFilter)
+        }
     }
 
-    private fun reset() {
+    private fun reset(cache: Boolean = true) {
         IP_ADDRESS              = sharedPref?.getString("ip_address", IP_ADDRESS) ?: IP_ADDRESS
         PORT                    = sharedPref?.getString("port", PORT) ?: PORT
         ROOT                    = sharedPref?.getString("root", ROOT) ?: ROOT
@@ -100,10 +127,10 @@ class NetLibActivity : AppCompatActivity() {
         if(ROOT.last() != '\\')
             ROOT += "\\"
 
-        updateLibrary()
+        updateLibrary(cache)
     }
 
-    private fun updateLibrary() {
+    private fun updateLibrary(cache: Boolean) {
         async(UI) {
             val response: Deferred<List<Pair<CATEGORY, List<NetLibCommon>>>> = bg {
                 Socket(IP_ADDRESS, PORT.toInt()).use {
@@ -132,8 +159,8 @@ class NetLibActivity : AppCompatActivity() {
             }
 
             // Check that the list is not empty and that the default category is contained
-            else if(library.any{ (cat, _) -> cat == DEFAULT_CATEGORY })
-                updateContent(DEFAULT_CATEGORY)
+            else if(library.any{ (cat, _) -> cat == DEFAULT_CATEGORY } && !cache)
+                updateContent(DEFAULT_CATEGORY, if(DEFAULT_CATEGORY == CATEGORY.TV) 1 else 0)
         }
     }
 
@@ -149,7 +176,8 @@ class NetLibActivity : AppCompatActivity() {
         (nav_recycler.adapter as CategoryAdapter).refreshCategories(library.map { (cat, _) -> mCategory(cat.name, cat) })
     }
 
-    private fun updateContent(category: CATEGORY) {
+    private fun updateContent(category: CATEGORY, mode: Int = 0, filterSeries: String = "",
+                              filterSeason: String = "") {
         val adapter = content_recycler.adapter
         supportActionBar?.title = category.getName()
 
@@ -158,14 +186,42 @@ class NetLibActivity : AppCompatActivity() {
             CATEGORY.MOVIE -> {
                 (adapter as ContentAdapter<mMovie>).content = MovieContainer(library.firstOrNull {
                     (cat, _) -> cat.name == CATEGORY.MOVIE.toString() }?.second as MutableList<mMovie>)
+                adapter.mode = 0
             }
             CATEGORY.TV -> {
-                (adapter as ContentAdapter<mShow>).content = ShowContainer(library.firstOrNull { (cat, _) ->
-                    cat.name == CATEGORY.TV.toString() }?.second as MutableList<mShow>)
+                when (mode) {
+                    1 -> {
+                        (adapter as ContentAdapter<mShow>).content = ParentContainer((library.firstOrNull { (cat, _) ->
+                            cat.name == CATEGORY.TV.toString() }?.second as MutableList<mShow>)
+                                .distinctBy { it.series }.toMutableList())
+                        adapter.mode = 1
+                        adapter.seriesFilter = ""
+                    }
+                    2 -> {
+                        (adapter as ContentAdapter<mShow>).content = ParentContainer((library.firstOrNull { (cat, _) ->
+                            cat.name == CATEGORY.TV.toString() }?.second as MutableList<mShow>)
+                                .filter { it.series == filterSeries }.distinctBy { it.season }.toMutableList())
+
+                        adapter.mode = 2
+                        adapter.seriesFilter = filterSeries
+                        supportActionBar?.title = filterSeries
+
+                    }
+                    3 -> {
+                        (adapter as ContentAdapter<mShow>).content = ShowContainer((library.firstOrNull { (cat, _) -> cat.name == CATEGORY.TV.toString() }?.second as MutableList<mShow>)
+                                .filter { it.series == filterSeries }.filter { it.season == filterSeason }.toMutableList())
+
+                        adapter.mode = 3
+                        adapter.seriesFilter = filterSeries
+                        adapter.seasonFilter = filterSeason
+                        supportActionBar?.title = "$filterSeries - $filterSeason"
+                    }
+                }
             }
             CATEGORY.SONG -> {
                 (adapter as ContentAdapter<mSong>).content = SongContainer(library.firstOrNull { (cat, _) ->
                     cat.name == CATEGORY.SONG.toString() }?.second as MutableList<mSong>)
+                adapter.mode = 0
             }
 
             else -> {  }
@@ -234,8 +290,11 @@ class NetLibActivity : AppCompatActivity() {
 
     private class ContentAdapter<T: NetLibCommon>(var content: BaseContainer<T>)
         : RecyclerView.Adapter<ContentAdapter.ViewHolder>() {
-        override fun getItemViewType(position: Int) = content.content[position].type.id
+        override fun getItemViewType(position: Int) = if(mode !=3) content.content[position].type.id else CATEGORY.PARENT.id
         override fun getItemCount() = content.content.size
+        var mode = 0
+        var seriesFilter = ""
+        var seasonFilter = ""
 
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             when(CATEGORY.from(holder.itemViewType)) {
@@ -248,6 +307,26 @@ class NetLibActivity : AppCompatActivity() {
                 }
 
                 CATEGORY.TV -> {
+                    when (mode) {
+                        1 -> {
+                            holder as ParentHolder
+                            val series = content.content[position] as mShow
+
+                            holder.title.text = series.series
+                            holder.mode.text = "1"
+                        }
+                        2 -> {
+                            holder as ParentHolder
+                            val series = content.content[position] as mShow
+
+                            holder.title.text = series.season
+                            holder.mode.text = "2"
+                            holder.meta.text = series.series
+                        }
+                    }
+                }
+
+                CATEGORY.PARENT -> {
                     holder as ShowHolder
                     val show = (content as ShowContainer).content[position]
 
@@ -274,9 +353,15 @@ class NetLibActivity : AppCompatActivity() {
             return when(CATEGORY.from(viewType)) {
                 CATEGORY.MOVIE -> { MovieHolder(LayoutInflater.from(parent.context)
                         .inflate(R.layout.container_movie, parent, false)) }
+                CATEGORY.TV -> {
+                    ParentHolder(LayoutInflater.from(parent.context)
+                            .inflate(R.layout.container_nav_category, parent, false))
+                }
 
-                CATEGORY.TV -> { ShowHolder(LayoutInflater.from(parent.context)
-                        .inflate(R.layout.container_show, parent, false)) }
+                CATEGORY.PARENT -> {
+                    ShowHolder(LayoutInflater.from(parent.context)
+                            .inflate(R.layout.container_show, parent, false))
+                }
 
                 CATEGORY.SONG -> { SongHolder(LayoutInflater.from(parent.context)
                         .inflate(R.layout.container_song, parent, false)) }
@@ -288,18 +373,24 @@ class NetLibActivity : AppCompatActivity() {
 
         open class ViewHolder(view: View) : RecyclerView.ViewHolder(view)
 
-        class MovieHolder(view: View) : ViewHolder(view) {
+        internal class ParentHolder(view: View) : ViewHolder(view) {
+            val title: TextView = view.nav_cat_name
+            val mode: TextView = view.nav_cat_type
+            val meta: TextView = view.nav_cat_meta
+        }
+
+        internal class MovieHolder(view: View) : ViewHolder(view) {
             val title: TextView = view.netlib_movie_name
             val file: TextView = view.netlib_movie_file
         }
 
-        class ShowHolder(view: View) : ViewHolder(view) {
+        internal class ShowHolder(view: View) : ViewHolder(view) {
             val series: TextView = view.netlib_show_series
             val episode: TextView = view.netlib_show_episode
             val file: TextView = view.netlib_show_file
         }
 
-        class SongHolder(view: View) : ViewHolder(view) {
+        internal class SongHolder(view: View) : ViewHolder(view) {
             val song: TextView = view.netlib_song_song
             val artist: TextView = view.netlib_song_artist
             val album: TextView = view.netlib_song_album
@@ -307,9 +398,22 @@ class NetLibActivity : AppCompatActivity() {
         }
     }
 
-    override fun onBackPressed() =
-            if (drawer_layout.isDrawerOpen(GravityCompat.START)) { drawer_layout.closeDrawer(GravityCompat.START) }
-            else { super.onBackPressed() }
+    override fun onBackPressed() {
+        if (drawer_layout.isDrawerOpen(GravityCompat.START)) {
+            drawer_layout.closeDrawer(GravityCompat.START)
+        } else {
+            val adapter = content_recycler.adapter as ContentAdapter<*>
+            when(adapter.mode) {
+                2 -> { updateContent(CATEGORY.TV, 1) }
+                3 -> { updateContent(CATEGORY.TV, 2, adapter.seriesFilter) }
+                else -> {
+                    if(DEFAULT_CATEGORY != adapter.content.content[0].type)
+                        updateContent(DEFAULT_CATEGORY, if(DEFAULT_CATEGORY == CATEGORY.TV) 1 else 0)
+                    else super.onBackPressed()
+                }
+            }
+        }
+    }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         // Inflate the menu; this adds items to the action bar if it is present.
@@ -332,5 +436,16 @@ class NetLibActivity : AppCompatActivity() {
             }
             else -> super.onOptionsItemSelected(item)
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle?) {
+        val adapter = content_recycler.adapter as ContentAdapter<*>
+        if(adapter.content.content.size > 0) {
+            outState?.putString("netlib_cat", adapter.content.content[0].type.toString())
+            outState?.putInt("netlib_mode", adapter.mode)
+            outState?.putString("netlib_seriesfilter", adapter.seriesFilter)
+            outState?.putString("netlib_seasonfilter", adapter.seasonFilter)
+        }
+        super.onSaveInstanceState(outState)
     }
 }

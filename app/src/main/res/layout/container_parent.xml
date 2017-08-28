@@ -1,25 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/nav_cat"
+    android:id="@+id/netlib_parent"
     android:orientation="horizontal"
     android:layout_width="match_parent"
     android:layout_height="wrap_content">
 
     <TextView
-        android:id="@+id/nav_cat_name"
+        android:id="@+id/netlib_parent_title"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textSize="16sp"
         android:padding="8dp" />
 
     <TextView
-        android:id="@+id/nav_cat_type"
+        android:id="@+id/netlib_parent_series"
         android:layout_width="wrap_content"
         android:layout_height="match_parent"
         android:visibility="gone" />
     <TextView
-        android:id="@+id/nav_cat_meta"
+        android:id="@+id/netlib_parent_season"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:visibility="gone" />
+        android:visibility="gone"/>
 </LinearLayout>
