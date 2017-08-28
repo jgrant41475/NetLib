@@ -58,7 +58,10 @@ class NetLibActivity : AppCompatActivity() {
                 object: RecyclerItemClickListener.OnItemClickListener {
                     override fun onItemClick(view: View, position: Int) {
                         val cat = (nav_recycler.adapter as CategoryAdapter).categories[position].type
-                        updateContent(cat, if(cat == CATEGORY.TV) 1 else 0)
+                        updateContent(cat,
+                                if(cat == CATEGORY.TV) 1
+                                else 0)
+
                         drawer_layout.closeDrawer(GravityCompat.START)
                     }
 
@@ -74,17 +77,28 @@ class NetLibActivity : AppCompatActivity() {
                         @Suppress("unchecked_cast")
                         val adapter = content_recycler.adapter as ContentAdapter<NetLibCommon>
                         when (adapter.mode) {
-                            0 -> {
-                                updateContent(adapter.content.content[position].type, 0)
-                            }
+                            0 -> updateContent(adapter.content.content[position].type, 0)
+
                             1 -> {
-                                updateContent(CATEGORY.TV, 2, (adapter.content.content[position] as mShow).series)
-                            }
-                            2 -> {
-                                val show = adapter.content.content[position] as mShow
-                                updateContent(CATEGORY.TV, 3, show.series, show.season)
+                                updateContent(CATEGORY.TV, 2,
+                                        (adapter.content.content[position] as mShow).series)
+
+                                @Suppress("unchecked_cast")
+                                val seasonsList = (library.firstOrNull { (cat, _) -> cat == CATEGORY.TV }
+                                        ?.second as MutableList<mShow>)
+                                        .filter { it.series == adapter.seriesFilter }
+                                        .distinctBy { it.season }
+
+                                if(seasonsList.size == 1) {
+                                    updateContent(CATEGORY.TV, 3, adapter.seriesFilter, seasonsList[0].season)
+                                }
                             }
 
+                            2 -> {
+                                val show = adapter.content.content[position] as mShow
+
+                                updateContent(CATEGORY.TV, 3, show.series, show.season)
+                            }
                         }
                     }
 
@@ -94,7 +108,10 @@ class NetLibActivity : AppCompatActivity() {
                         val item = adapter.content.content[position]
 
                         when(item.type) {
-                            CATEGORY.MOVIE, CATEGORY.TV, CATEGORY.SONG -> { sendPlay(item.file) }
+                            CATEGORY.MOVIE, CATEGORY.TV, CATEGORY.SONG -> {
+                                sendPlay(item.file)
+                            }
+
                             else -> {  }
                         }
                     }
@@ -108,7 +125,9 @@ class NetLibActivity : AppCompatActivity() {
 
         reset(savedInstanceState != null)
 
-        if(savedInstanceState != null && savedInstanceState.getString("netlib_cat", "") != "") {
+        if(savedInstanceState != null &&
+                savedInstanceState.getString("netlib_cat", "") != "") {
+
             val cat = CATEGORY.from(savedInstanceState.getString("netlib_cat"))
             val mode = savedInstanceState.getInt("netlib_mode")
             val seriesFilter = savedInstanceState.getString("netlib_seriesfilter")
@@ -122,7 +141,8 @@ class NetLibActivity : AppCompatActivity() {
         IP_ADDRESS              = sharedPref?.getString("ip_address", IP_ADDRESS) ?: IP_ADDRESS
         PORT                    = sharedPref?.getString("port", PORT) ?: PORT
         ROOT                    = sharedPref?.getString("root", ROOT) ?: ROOT
-        DEFAULT_CATEGORY        = CATEGORY.from(sharedPref!!.getString("default_cat", DEFAULT_CATEGORY.toString()))
+        DEFAULT_CATEGORY        =
+                CATEGORY.from(sharedPref!!.getString("default_cat", DEFAULT_CATEGORY.toString()))
 
         if(ROOT.last() != '\\')
             ROOT += "\\"
@@ -173,7 +193,8 @@ class NetLibActivity : AppCompatActivity() {
     private fun refreshCategories(newCat: List<Pair<CATEGORY, List<NetLibCommon>>>) {
         library.clear()
         library.addAll(newCat)
-        (nav_recycler.adapter as CategoryAdapter).refreshCategories(library.map { (cat, _) -> mCategory(cat.name, cat) })
+        (nav_recycler.adapter as CategoryAdapter)
+                .refreshCategories(library.map { (cat, _) -> mCategory(cat.name, cat) })
     }
 
     private fun updateContent(category: CATEGORY, mode: Int = 0, filterSeries: String = "",
@@ -184,32 +205,44 @@ class NetLibActivity : AppCompatActivity() {
         @Suppress("unchecked_cast")
         when(category) {
             CATEGORY.MOVIE -> {
-                (adapter as ContentAdapter<mMovie>).content = MovieContainer(library.firstOrNull {
-                    (cat, _) -> cat.name == CATEGORY.MOVIE.toString() }?.second as MutableList<mMovie>)
+                (adapter as ContentAdapter<mMovie>).content = MovieContainer(
+                        library.firstOrNull { (cat, _) -> cat.name == CATEGORY.MOVIE.toString() }
+                                ?.second as MutableList<mMovie>)
+
                 adapter.mode = 0
             }
+
             CATEGORY.TV -> {
                 when (mode) {
                     1 -> {
-                        (adapter as ContentAdapter<mShow>).content = ParentContainer((library.firstOrNull { (cat, _) ->
-                            cat.name == CATEGORY.TV.toString() }?.second as MutableList<mShow>)
-                                .distinctBy { it.series }.toMutableList())
+                        (adapter as ContentAdapter<mShow>).content = ParentContainer(
+                                (library.firstOrNull { (cat, _) -> cat.name == CATEGORY.TV.toString() }
+                                        ?.second as MutableList<mShow>)
+                                .distinctBy { it.series }
+                                .toMutableList())
+
                         adapter.mode = 1
                         adapter.seriesFilter = ""
                     }
                     2 -> {
-                        (adapter as ContentAdapter<mShow>).content = ParentContainer((library.firstOrNull { (cat, _) ->
-                            cat.name == CATEGORY.TV.toString() }?.second as MutableList<mShow>)
-                                .filter { it.series == filterSeries }.distinctBy { it.season }.toMutableList())
+                        (adapter as ContentAdapter<mShow>).content = ParentContainer(
+                                (library.firstOrNull { (cat, _) -> cat.name == CATEGORY.TV.toString() }
+                                        ?.second as MutableList<mShow>)
+                                    .filter { it.series == filterSeries }
+                                    .distinctBy { it.season }
+                                    .toMutableList())
 
                         adapter.mode = 2
                         adapter.seriesFilter = filterSeries
                         supportActionBar?.title = filterSeries
-
                     }
                     3 -> {
-                        (adapter as ContentAdapter<mShow>).content = ShowContainer((library.firstOrNull { (cat, _) -> cat.name == CATEGORY.TV.toString() }?.second as MutableList<mShow>)
-                                .filter { it.series == filterSeries }.filter { it.season == filterSeason }.toMutableList())
+                        (adapter as ContentAdapter<mShow>).content = ShowContainer(
+                                (library.firstOrNull { (cat, _) -> cat.name == CATEGORY.TV.toString() }
+                                        ?.second as MutableList<mShow>)
+                                    .filter { it.series == filterSeries }
+                                    .filter { it.season == filterSeason }
+                                    .toMutableList())
 
                         adapter.mode = 3
                         adapter.seriesFilter = filterSeries
@@ -218,9 +251,12 @@ class NetLibActivity : AppCompatActivity() {
                     }
                 }
             }
+
             CATEGORY.SONG -> {
-                (adapter as ContentAdapter<mSong>).content = SongContainer(library.firstOrNull { (cat, _) ->
-                    cat.name == CATEGORY.SONG.toString() }?.second as MutableList<mSong>)
+                (adapter as ContentAdapter<mSong>).content = SongContainer(
+                        library.firstOrNull { (cat, _) -> cat.name == CATEGORY.SONG.toString() }
+                                ?.second as MutableList<mSong>)
+
                 adapter.mode = 0
             }
 
@@ -233,21 +269,29 @@ class NetLibActivity : AppCompatActivity() {
     private fun parseCategory(category: String, list: List<String>): Pair<CATEGORY, List<NetLibCommon>> {
         return when (category) {
             "Movies" -> {
-                CATEGORY.MOVIE to list.map { mMovie(it.replace(ROOT, "").split("\\")[1], it) }
+                CATEGORY.MOVIE to list.map {
+                    mMovie(it.replace(ROOT, "").split("\\")[1], it)
+                }
             }
             "TV" -> {
                 CATEGORY.TV to list.map {
-                    val (series, season, episode) = it.replace(ROOT + "TV\\", "").split("\\")
+                    val (series, season, episode) =
+                            it.replace(ROOT + "TV\\", "").split("\\")
+
                     mShow(episode.substring(0, episode.lastIndexOf(".")), season, series, it)
                 }
             }
             "Songs" -> {
                 CATEGORY.SONG to list.map {
-                    val (artist, album, song) = it.replace(ROOT + "Songs\\", "").split("\\")
+                    val (artist, album, song) =
+                            it.replace(ROOT + "Songs\\", "").split("\\")
+
                     mSong(song.substring(0, song.lastIndexOf(".")), artist, album, it)
                 }
             }
-            else -> { CATEGORY.NONE to emptyList() }
+            else -> {
+                CATEGORY.NONE to emptyList()
+            }
         }
     }
 
@@ -262,6 +306,7 @@ class NetLibActivity : AppCompatActivity() {
 
     private class CategoryAdapter(val categories: MutableList<mCategory>)
         : RecyclerView.Adapter<CategoryAdapter.Holder>() {
+        override fun getItemCount() = categories.size
 
         internal fun refreshCategories(newList: List<mCategory>) {
             categories.clear()
@@ -277,12 +322,11 @@ class NetLibActivity : AppCompatActivity() {
             holder.type.text = cat.toString()
         }
 
-        override fun getItemCount() = categories.size
-
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
-                Holder(LayoutInflater.from(parent.context).inflate(R.layout.container_nav_category, parent, false))
+                Holder(LayoutInflater.from(parent.context)
+                        .inflate(R.layout.container_nav_category, parent, false))
 
-        class Holder(view: View) : RecyclerView.ViewHolder(view) {
+        private class Holder(view: View) : RecyclerView.ViewHolder(view) {
             val name: TextView = view.find(R.id.nav_cat_name)
             val type: TextView = view.find(R.id.nav_cat_type)
         }
@@ -290,11 +334,15 @@ class NetLibActivity : AppCompatActivity() {
 
     private class ContentAdapter<T: NetLibCommon>(var content: BaseContainer<T>)
         : RecyclerView.Adapter<ContentAdapter.ViewHolder>() {
-        override fun getItemViewType(position: Int) = if(mode !=3) content.content[position].type.id else CATEGORY.PARENT.id
+        internal var mode = 0
+        internal var seriesFilter = ""
+        internal var seasonFilter = ""
+
+        override fun getItemViewType(position: Int) =
+                if(mode !=3) content.content[position].type.id
+                else CATEGORY.PARENT.id
+
         override fun getItemCount() = content.content.size
-        var mode = 0
-        var seriesFilter = ""
-        var seasonFilter = ""
 
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             when(CATEGORY.from(holder.itemViewType)) {
@@ -351,8 +399,10 @@ class NetLibActivity : AppCompatActivity() {
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
             return when(CATEGORY.from(viewType)) {
-                CATEGORY.MOVIE -> { MovieHolder(LayoutInflater.from(parent.context)
-                        .inflate(R.layout.container_movie, parent, false)) }
+                CATEGORY.MOVIE -> {
+                    MovieHolder(LayoutInflater.from(parent.context)
+                        .inflate(R.layout.container_movie, parent, false))
+                }
                 CATEGORY.TV -> {
                     ParentHolder(LayoutInflater.from(parent.context)
                             .inflate(R.layout.container_nav_category, parent, false))
@@ -363,15 +413,19 @@ class NetLibActivity : AppCompatActivity() {
                             .inflate(R.layout.container_show, parent, false))
                 }
 
-                CATEGORY.SONG -> { SongHolder(LayoutInflater.from(parent.context)
-                        .inflate(R.layout.container_song, parent, false)) }
+                CATEGORY.SONG -> {
+                    SongHolder(LayoutInflater.from(parent.context)
+                        .inflate(R.layout.container_song, parent, false))
+                }
 
-                else -> { ViewHolder(LayoutInflater.from(parent.context)
-                        .inflate(android.R.layout.simple_list_item_1, parent, false)) }
+                else -> {
+                    ViewHolder(LayoutInflater.from(parent.context)
+                        .inflate(android.R.layout.simple_list_item_1, parent, false))
+                }
             }
         }
 
-        open class ViewHolder(view: View) : RecyclerView.ViewHolder(view)
+        private open class ViewHolder(view: View) : RecyclerView.ViewHolder(view)
 
         internal class ParentHolder(view: View) : ViewHolder(view) {
             val title: TextView = view.nav_cat_name
@@ -401,14 +455,26 @@ class NetLibActivity : AppCompatActivity() {
     override fun onBackPressed() {
         if (drawer_layout.isDrawerOpen(GravityCompat.START)) {
             drawer_layout.closeDrawer(GravityCompat.START)
-        } else {
+        }
+        else {
             val adapter = content_recycler.adapter as ContentAdapter<*>
+
+
             when(adapter.mode) {
-                2 -> { updateContent(CATEGORY.TV, 1) }
-                3 -> { updateContent(CATEGORY.TV, 2, adapter.seriesFilter) }
+                2 -> {
+                    updateContent(CATEGORY.TV, 1)
+                }
+
+                3 -> {
+                    updateContent(CATEGORY.TV, 2, adapter.seriesFilter)
+                }
+
                 else -> {
                     if(DEFAULT_CATEGORY != adapter.content.content[0].type)
-                        updateContent(DEFAULT_CATEGORY, if(DEFAULT_CATEGORY == CATEGORY.TV) 1 else 0)
+                        updateContent(DEFAULT_CATEGORY,
+                                if(DEFAULT_CATEGORY == CATEGORY.TV) 1
+                                else 0)
+
                     else super.onBackPressed()
                 }
             }
@@ -431,7 +497,7 @@ class NetLibActivity : AppCompatActivity() {
                 true
             }
             R.id.action_refresh -> {
-                reset()
+                reset(false)
                 true
             }
             else -> super.onOptionsItemSelected(item)
@@ -440,12 +506,14 @@ class NetLibActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle?) {
         val adapter = content_recycler.adapter as ContentAdapter<*>
+
         if(adapter.content.content.size > 0) {
             outState?.putString("netlib_cat", adapter.content.content[0].type.toString())
             outState?.putInt("netlib_mode", adapter.mode)
             outState?.putString("netlib_seriesfilter", adapter.seriesFilter)
             outState?.putString("netlib_seasonfilter", adapter.seasonFilter)
         }
+
         super.onSaveInstanceState(outState)
     }
 }
