@@ -1,11 +1,13 @@
 package local.john.netlib
 
+import android.content.DialogInterface
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.preference.PreferenceManager
 import android.support.v4.view.GravityCompat
 import android.support.v7.app.ActionBarDrawerToggle
+import android.support.v7.app.AlertDialog
 import android.support.v7.app.AppCompatActivity
 import android.support.v7.widget.LinearLayoutManager
 import android.support.v7.widget.RecyclerView
@@ -24,19 +26,23 @@ import kotlinx.coroutines.experimental.async
 import local.john.netlib.Util.*
 import org.jetbrains.anko.coroutines.experimental.bg
 import org.jetbrains.anko.find
+import org.jetbrains.anko.toast
 import java.io.PrintWriter
+import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
 
 class NetLibActivity : AppCompatActivity() {
 
     internal companion object {
-        var sharedPref: SharedPreferences?                                  =   null
-        val library: MutableList<Pair<CATEGORY, List<NetLibCommon>>>        =   mutableListOf()
+        var sharedPref: SharedPreferences? = null
+        val library: MutableList<Pair<CATEGORY, List<NetLibCommon>>> = mutableListOf()
 
-        var IP_ADDRESS                                                      =   "192.168.0.5"
-        var PORT                                                            =   "5051"
-        var ROOT                                                            =   "C:\\Media"
-        var DEFAULT_CATEGORY                                                =   CATEGORY.MOVIE
+        var IP_ADDRESS = "192.168.0.5"
+        var PORT = "5051"
+        var ROOT = "C:\\Media"
+        var DEFAULT_CATEGORY = CATEGORY.MOVIE
+        val NETWORK_TIMEOUT_SECONDS = 1
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,24 +61,24 @@ class NetLibActivity : AppCompatActivity() {
         nav_recycler.layoutManager = LinearLayoutManager(this)
         nav_recycler.adapter = CategoryAdapter(mutableListOf())
         nav_recycler.addOnItemTouchListener(RecyclerItemClickListener(this, nav_recycler,
-                object: RecyclerItemClickListener.OnItemClickListener {
+                object : RecyclerItemClickListener.OnItemClickListener {
                     override fun onItemClick(view: View, position: Int) {
                         val cat = (nav_recycler.adapter as CategoryAdapter).categories[position].type
                         updateContent(cat,
-                                if(cat == CATEGORY.TV) 1
+                                if (cat == CATEGORY.TV) 1
                                 else 0)
 
                         drawer_layout.closeDrawer(GravityCompat.START)
                     }
 
-                    override fun onLongItemClick(view: View, position: Int) {  }
+                    override fun onLongItemClick(view: View, position: Int) {}
                 }))
 
         content_recycler.setHasFixedSize(true)
         content_recycler.layoutManager = LinearLayoutManager(this)
         content_recycler.adapter = ContentAdapter(MovieContainer(mutableListOf()))
         content_recycler.addOnItemTouchListener(RecyclerItemClickListener(this, content_recycler,
-                object: RecyclerItemClickListener.OnItemClickListener {
+                object : RecyclerItemClickListener.OnItemClickListener {
                     override fun onItemClick(view: View, position: Int) {
                         @Suppress("unchecked_cast")
                         val adapter = content_recycler.adapter as ContentAdapter<NetLibCommon>
@@ -84,13 +90,15 @@ class NetLibActivity : AppCompatActivity() {
                                         (adapter.content.content[position] as mShow).series)
 
                                 @Suppress("unchecked_cast")
-                                val seasonsList = (library.firstOrNull { (cat, _) -> cat == CATEGORY.TV }
-                                        ?.second as MutableList<mShow>)
-                                        .filter { it.series == adapter.seriesFilter }
-                                        .distinctBy { it.season }
+                                val seasonsList =
+                                        (library.firstOrNull { (cat, _) -> cat == CATEGORY.TV }
+                                                ?.second as MutableList<mShow>)
+                                                .filter { it.series == adapter.seriesFilter }
+                                                .distinctBy { it.season }
 
-                                if(seasonsList.size == 1) {
-                                    updateContent(CATEGORY.TV, 3, adapter.seriesFilter, seasonsList[0].season)
+                                if (seasonsList.size == 1) {
+                                    updateContent(CATEGORY.TV, 3,
+                                            adapter.seriesFilter, seasonsList[0].season)
                                 }
                             }
 
@@ -107,25 +115,26 @@ class NetLibActivity : AppCompatActivity() {
                         val adapter = content_recycler.adapter as ContentAdapter<NetLibCommon>
                         val item = adapter.content.content[position]
 
-                        when(item.type) {
+                        when (item.type) {
                             CATEGORY.MOVIE, CATEGORY.TV, CATEGORY.SONG -> {
-                                sendPlay(item.file)
+                                confirmYesNo("Play '${item.file}'?") { sendPlay(item.file) }
                             }
 
-                            else -> {  }
+                            else -> {
+                            }
                         }
                     }
                 }))
 
         // Load app settings and data
-        sharedPref              = PreferenceManager.getDefaultSharedPreferences(applicationContext)
+        sharedPref = PreferenceManager.getDefaultSharedPreferences(applicationContext)
 
-        if(sharedPref?.getString("ip_address", "NONE") == "NONE")
+        if (sharedPref?.getString("ip_address", "NONE") == "NONE")
             firstRun(sharedPref!!)
 
         reset(savedInstanceState != null)
 
-        if(savedInstanceState != null &&
+        if (savedInstanceState != null &&
                 savedInstanceState.getString("netlib_cat", "") != "") {
 
             val cat = CATEGORY.from(savedInstanceState.getString("netlib_cat"))
@@ -138,13 +147,13 @@ class NetLibActivity : AppCompatActivity() {
     }
 
     private fun reset(cache: Boolean = true) {
-        IP_ADDRESS              = sharedPref?.getString("ip_address", IP_ADDRESS) ?: IP_ADDRESS
-        PORT                    = sharedPref?.getString("port", PORT) ?: PORT
-        ROOT                    = sharedPref?.getString("root", ROOT) ?: ROOT
-        DEFAULT_CATEGORY        =
+        IP_ADDRESS = sharedPref?.getString("ip_address", IP_ADDRESS) ?: IP_ADDRESS
+        PORT = sharedPref?.getString("port", PORT) ?: PORT
+        ROOT = sharedPref?.getString("root", ROOT) ?: ROOT
+        DEFAULT_CATEGORY =
                 CATEGORY.from(sharedPref!!.getString("default_cat", DEFAULT_CATEGORY.toString()))
 
-        if(ROOT.last() != '\\')
+        if (ROOT.last() != '\\')
             ROOT += "\\"
 
         updateLibrary(cache)
@@ -153,40 +162,64 @@ class NetLibActivity : AppCompatActivity() {
     private fun updateLibrary(cache: Boolean) {
         async(UI) {
             val response: Deferred<List<Pair<CATEGORY, List<NetLibCommon>>>> = bg {
-                Socket(IP_ADDRESS, PORT.toInt()).use {
-                    PrintWriter(it.getOutputStream(), true).println("root=\"${ROOT.replace(" ", "`")}\" list")
-                    val reader = it.getInputStream().bufferedReader()
-                    val temp = mutableListOf<Pair<CATEGORY, List<NetLibCommon>>>()
-                    var line = reader.readLine()
+                val socket = Socket()
+                val temp = mutableListOf<Pair<CATEGORY, List<NetLibCommon>>>()
 
-                    while (line != null) {
-                        val (cat, list) = line.split("@")
+                try {
+                    socket.connect(InetSocketAddress(IP_ADDRESS, PORT.toInt()),
+                            1000 * NETWORK_TIMEOUT_SECONDS)
 
-                        temp.add(parseCategory(cat, list.split("|")))
-                        line = reader.readLine()
+                    socket.use {
+                        PrintWriter(socket.getOutputStream(), true)
+                                .println("root=\"${ROOT.replace(" ", "`")}\" list")
+
+                        val reader = socket.getInputStream().bufferedReader()
+                        var line = reader.readLine()
+
+                        while (line != null) {
+                            val (cat, list) = line.split("@")
+
+                            temp.add(parseCategory(cat, list.split("|")))
+                            line = reader.readLine()
+                        }
                     }
-
-                    temp.toList()
+                } catch (e: SocketTimeoutException) {
+                    runOnUiThread({ toast("Unable to connect to host.") })
                 }
+
+                temp
             }
 
             refreshCategories(response.await())
 
             // Library is empty, clear caches
-            if(library.size < 1) {
+            if (library.size < 1) {
                 nav_recycler.adapter = CategoryAdapter(mutableListOf())
                 content_recycler.adapter = ContentAdapter(MovieContainer(mutableListOf()))
             }
 
             // Check that the list is not empty and that the default category is contained
-            else if(library.any{ (cat, _) -> cat == DEFAULT_CATEGORY } && !cache)
-                updateContent(DEFAULT_CATEGORY, if(DEFAULT_CATEGORY == CATEGORY.TV) 1 else 0)
+            else if (library.any { (cat, _) -> cat == DEFAULT_CATEGORY } && !cache)
+                updateContent(DEFAULT_CATEGORY, if (DEFAULT_CATEGORY == CATEGORY.TV) 1 else 0)
         }
     }
 
     private fun sendPlay(file: String) {
-        async(UI) { bg { Socket(IP_ADDRESS, PORT.toInt()).use {
-            PrintWriter(it.getOutputStream(), true).println("play file=${file.replace(" ", "`")}") } }.await()
+        async(UI) {
+            bg {
+                val socket = Socket()
+                try {
+                    socket.connect(InetSocketAddress(IP_ADDRESS, PORT.toInt()),
+                            1000 * NETWORK_TIMEOUT_SECONDS)
+
+                    socket.use {
+                        PrintWriter(it.getOutputStream(), true)
+                                .println("play file=${file.replace(" ", "`")}")
+                    }
+                } catch (e: SocketTimeoutException) {
+                    runOnUiThread({ toast("Unable to connect to host.") })
+                }
+            }
         }
     }
 
@@ -203,7 +236,7 @@ class NetLibActivity : AppCompatActivity() {
         supportActionBar?.title = category.getName()
 
         @Suppress("unchecked_cast")
-        when(category) {
+        when (category) {
             CATEGORY.MOVIE -> {
                 (adapter as ContentAdapter<mMovie>).content = MovieContainer(
                         library.firstOrNull { (cat, _) -> cat.name == CATEGORY.MOVIE.toString() }
@@ -218,8 +251,8 @@ class NetLibActivity : AppCompatActivity() {
                         (adapter as ContentAdapter<mShow>).content = ParentContainer(
                                 (library.firstOrNull { (cat, _) -> cat.name == CATEGORY.TV.toString() }
                                         ?.second as MutableList<mShow>)
-                                .distinctBy { it.series }
-                                .toMutableList())
+                                        .distinctBy { it.series }
+                                        .toMutableList())
 
                         adapter.mode = 1
                         adapter.seriesFilter = ""
@@ -228,9 +261,9 @@ class NetLibActivity : AppCompatActivity() {
                         (adapter as ContentAdapter<mShow>).content = ParentContainer(
                                 (library.firstOrNull { (cat, _) -> cat.name == CATEGORY.TV.toString() }
                                         ?.second as MutableList<mShow>)
-                                    .filter { it.series == filterSeries }
-                                    .distinctBy { it.season }
-                                    .toMutableList())
+                                        .filter { it.series == filterSeries }
+                                        .distinctBy { it.season }
+                                        .toMutableList())
 
                         adapter.mode = 2
                         adapter.seriesFilter = filterSeries
@@ -240,9 +273,9 @@ class NetLibActivity : AppCompatActivity() {
                         (adapter as ContentAdapter<mShow>).content = ShowContainer(
                                 (library.firstOrNull { (cat, _) -> cat.name == CATEGORY.TV.toString() }
                                         ?.second as MutableList<mShow>)
-                                    .filter { it.series == filterSeries }
-                                    .filter { it.season == filterSeason }
-                                    .toMutableList())
+                                        .filter { it.series == filterSeries }
+                                        .filter { it.season == filterSeason }
+                                        .toMutableList())
 
                         adapter.mode = 3
                         adapter.seriesFilter = filterSeries
@@ -260,7 +293,8 @@ class NetLibActivity : AppCompatActivity() {
                 adapter.mode = 0
             }
 
-            else -> {  }
+            else -> {
+            }
         }
 
         adapter.notifyDataSetChanged()
@@ -304,6 +338,23 @@ class NetLibActivity : AppCompatActivity() {
                 .apply()
     }
 
+    private fun confirmYesNo(msg: String = "Are you sure?", operation: () -> Unit) {
+        val dialogClickListener = DialogInterface.OnClickListener { _, choice ->
+            when (choice) {
+                DialogInterface.BUTTON_POSITIVE -> {
+                    operation()
+                }
+                else -> {
+                }
+            }
+        }
+        AlertDialog.Builder(this)
+                .setMessage(msg)
+                .setPositiveButton("Yes", dialogClickListener)
+                .setNegativeButton("No", dialogClickListener)
+                .show()
+    }
+
     private class CategoryAdapter(val categories: MutableList<mCategory>)
         : RecyclerView.Adapter<CategoryAdapter.Holder>() {
         override fun getItemCount() = categories.size
@@ -332,20 +383,20 @@ class NetLibActivity : AppCompatActivity() {
         }
     }
 
-    private class ContentAdapter<T: NetLibCommon>(var content: BaseContainer<T>)
+    private class ContentAdapter<T : NetLibCommon>(var content: BaseContainer<T>)
         : RecyclerView.Adapter<ContentAdapter.ViewHolder>() {
         internal var mode = 0
         internal var seriesFilter = ""
         internal var seasonFilter = ""
 
         override fun getItemViewType(position: Int) =
-                if(mode !=3) content.content[position].type.id
+                if (mode != 3) content.content[position].type.id
                 else CATEGORY.PARENT.id
 
         override fun getItemCount() = content.content.size
 
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-            when(CATEGORY.from(holder.itemViewType)) {
+            when (CATEGORY.from(holder.itemViewType)) {
                 CATEGORY.MOVIE -> {
                     holder as MovieHolder
                     val movie = (content as MovieContainer).content[position]
@@ -393,15 +444,16 @@ class NetLibActivity : AppCompatActivity() {
                     holder.file.text = show.file
                 }
 
-                else -> {  }
+                else -> {
+                }
             }
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-            return when(CATEGORY.from(viewType)) {
+            return when (CATEGORY.from(viewType)) {
                 CATEGORY.MOVIE -> {
                     MovieHolder(LayoutInflater.from(parent.context)
-                        .inflate(R.layout.container_movie, parent, false))
+                            .inflate(R.layout.container_movie, parent, false))
                 }
                 CATEGORY.TV -> {
                     ParentHolder(LayoutInflater.from(parent.context)
@@ -415,12 +467,12 @@ class NetLibActivity : AppCompatActivity() {
 
                 CATEGORY.SONG -> {
                     SongHolder(LayoutInflater.from(parent.context)
-                        .inflate(R.layout.container_song, parent, false))
+                            .inflate(R.layout.container_song, parent, false))
                 }
 
                 else -> {
                     ViewHolder(LayoutInflater.from(parent.context)
-                        .inflate(android.R.layout.simple_list_item_1, parent, false))
+                            .inflate(android.R.layout.simple_list_item_1, parent, false))
                 }
             }
         }
@@ -455,12 +507,11 @@ class NetLibActivity : AppCompatActivity() {
     override fun onBackPressed() {
         if (drawer_layout.isDrawerOpen(GravityCompat.START)) {
             drawer_layout.closeDrawer(GravityCompat.START)
-        }
-        else {
+        } else {
             val adapter = content_recycler.adapter as ContentAdapter<*>
 
 
-            when(adapter.mode) {
+            when (adapter.mode) {
                 2 -> {
                     updateContent(CATEGORY.TV, 1)
                 }
@@ -470,11 +521,10 @@ class NetLibActivity : AppCompatActivity() {
                 }
 
                 else -> {
-                    if(DEFAULT_CATEGORY != adapter.content.content[0].type)
+                    if (DEFAULT_CATEGORY != adapter.content.content[0].type)
                         updateContent(DEFAULT_CATEGORY,
-                                if(DEFAULT_CATEGORY == CATEGORY.TV) 1
+                                if (DEFAULT_CATEGORY == CATEGORY.TV) 1
                                 else 0)
-
                     else super.onBackPressed()
                 }
             }
@@ -507,7 +557,7 @@ class NetLibActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle?) {
         val adapter = content_recycler.adapter as ContentAdapter<*>
 
-        if(adapter.content.content.size > 0) {
+        if (adapter.content.content.size > 0) {
             outState?.putString("netlib_cat", adapter.content.content[0].type.toString())
             outState?.putInt("netlib_mode", adapter.mode)
             outState?.putString("netlib_seriesfilter", adapter.seriesFilter)
